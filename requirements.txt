@@ -1,0 +1,10 @@
+torch==1.7.1+cu110
+torchvision==0.8.2
+torchtext==0.8.1
+image_slicer
+pytorch-lightning
+segmentation_models_pytorch
+pytorch_toolbelt
+opencv-python
+albumentations==1.0.0
+pandas
