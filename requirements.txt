@@ -8,3 +8,4 @@ pytorch_toolbelt
 opencv-python
 albumentations==1.0.0
 pandas
+-f https://download.pytorch.org/whl/torch_stable.html

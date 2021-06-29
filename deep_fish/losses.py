@@ -17,13 +17,9 @@ class DiceBCELoss(torch.nn.Module):
 
         bce = self.bce(inputs.float(), targets.float())
 
-        div = 1 - (torch.sum(inputs) / (torch.sum(targets) + 0.0000001))
-        if div < 0:
-            div = 1
+        loss = bce + dice
 
-        loss = bce + div
-
-        return loss, dice, bce
+        return loss
 
 
 class FocalTverskyLoss(torch.nn.Module):

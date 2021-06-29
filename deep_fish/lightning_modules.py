@@ -44,9 +44,11 @@ class DeepFishDataModule(pl.LightningDataModule):
                  val_csv,
                  image_dir,
                  masks_dir,
+                 include_empty=True,
                  batch_size=2):
         super(DeepFishDataModule, self).__init__()
         self.batch_size = batch_size
+        self.include_empty = include_empty
         self.train_csv = train_csv
         self.test_csv = test_csv
         self.val_csv = val_csv
@@ -59,14 +61,18 @@ class DeepFishDataModule(pl.LightningDataModule):
         test_imgs = pd.read_csv(self.test_csv)["ID"].tolist()
         val_imgs = pd.read_csv(self.val_csv)["ID"].tolist()
 
-        train_img_paths = [os.path.join(self.image_dir, name + '.jpg') for name in train_imgs]
-        train_mask_paths = [os.path.join(self.masks_dir, name + '.png') for name in train_imgs]
+        print("TRAIN IMGS LEN", len(train_imgs))
+        print("TEST IMGS LEN", len(test_imgs))
+        print("VAL IMGS LEN", len(val_imgs))
 
-        test_img_paths = [os.path.join(self.image_dir, name + '.jpg') for name in test_imgs]
-        test_mask_paths = [os.path.join(self.masks_dir, name + '.png') for name in test_imgs]
+        train_img_paths = [os.path.join(self.image_dir, name + '.jpg') for name in train_imgs if self.include_empty or 'empty' not in name]
+        train_mask_paths = [os.path.join(self.masks_dir, name + '.png') for name in train_imgs if self.include_empty or 'empty' not in name]
 
-        val_img_paths = [os.path.join(self.image_dir, name + '.jpg') for name in val_imgs]
-        val_mask_paths = [os.path.join(self.masks_dir, name + '.png') for name in val_imgs]
+        test_img_paths = [os.path.join(self.image_dir, name + '.jpg') for name in test_imgs if self.include_empty or 'empty' not in name]
+        test_mask_paths = [os.path.join(self.masks_dir, name + '.png') for name in test_imgs if self.include_empty or 'empty' not in name]
+
+        val_img_paths = [os.path.join(self.image_dir, name + '.jpg') for name in val_imgs if self.include_empty or 'empty' not in name]
+        val_mask_paths = [os.path.join(self.masks_dir, name + '.png') for name in val_imgs if self.include_empty or 'empty' not in name]
 
         self.train_set = DeepFishDataset(train_img_paths, train_mask_paths,
                                          augmentation=get_training_augmentation())
@@ -77,14 +83,16 @@ class DeepFishDataModule(pl.LightningDataModule):
         self.test_set = DeepFishDataset(test_img_paths, test_mask_paths,
                                        augmentation=get_validation_augmentation())
 
+        print("DS LEN TR, VAL, TEST", len(self.train_set), len(self.val_set), len(self.test_set))
+
     def train_dataloader(self):
-        return DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=2, drop_last=True)
+        return DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=0, drop_last=True)
 
     def val_dataloader(self):
-        return DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False, num_workers=2, drop_last=True)
+        return DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False, num_workers=0, drop_last=True)
 
     def test_dataloader(self):
-        return DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False, num_workers=2, drop_last=True)
+        return DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False, num_workers=0, drop_last=True)
 
 
 class DeepFishSegmentator(pl.LightningModule):
@@ -93,7 +101,7 @@ class DeepFishSegmentator(pl.LightningModule):
         super(DeepFishSegmentator, self).__init__()
         self.model = model
         self.lr = 1e-3
-        self.criterion = FocalTverskyLoss()
+        self.criterion = DiceBCELoss()
 
     def forward(self, z):
         return self.model(z)
@@ -114,7 +122,7 @@ class DeepFishSegmentator(pl.LightningModule):
 
         loss = self.criterion(logs, torch.unsqueeze(true_masks, 1))
 
-        self.log('val_loss', loss, on_epoch=True, prog_bar=False, logger=True)
+        self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=False, logger=True)
 
         return loss
 
@@ -123,4 +131,4 @@ class DeepFishSegmentator(pl.LightningModule):
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
         return (
-            {'optimizer': optimizer, 'lr_scheduler': scheduler})
+            {'optimizer': optimizer, 'lr_scheduler': scheduler, 'monitor': 'train_loss'})
