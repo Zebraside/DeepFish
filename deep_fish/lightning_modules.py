@@ -9,14 +9,17 @@ import pytorch_lightning as pl
 import albumentations as albu
 import albumentations.pytorch as alto
 
+import segmentation_models_pytorch as smp
+
 from dataset import DeepFishDataset
-from losses import DiceBCELoss, FocalTverskyLoss
+from losses import DiceBCELoss, FocalTverskyLoss, FocalLoss
 
 
-def get_training_augmentation(img_size=640):
+def get_training_augmentation(img_size=960, keep_aspect_ratio=True):
     train_transform = [
         albu.LongestMaxSize(img_size, always_apply=True),
-        albu.PadIfNeeded(img_size, img_size, border_mode=0, always_apply=True),
+        # albu.PadIfNeeded(img_size, img_size, border_mode=0, always_apply=True),
+        # albu.Resize(img_size, img_size), 
 
         albu.HorizontalFlip(p=0.3),
         albu.VerticalFlip(p=0.2),
@@ -26,13 +29,14 @@ def get_training_augmentation(img_size=640):
     return albu.Compose(train_transform)
 
 
-def get_validation_augmentation(img_size=640):
+def get_validation_augmentation(img_size=960, keep_aspect_ratio=True):
     test_transform = [
         albu.LongestMaxSize(img_size, always_apply=True),
-        albu.PadIfNeeded(img_size, img_size, border_mode=0, always_apply=True),
+        #albu.PadIfNeeded(img_size, img_size, border_mode=0, always_apply=True),
+        # albu.Resize(img_size, img_size),
 
         albu.ToFloat(),
-        alto.transforms.ToTensorV2(),
+        alto.transforms.ToTensorV2()
     ]
     return albu.Compose(test_transform)
 
@@ -95,13 +99,47 @@ class DeepFishDataModule(pl.LightningDataModule):
         return DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False, num_workers=0, drop_last=True)
 
 
-class DeepFishSegmentator(pl.LightningModule):
-    def __init__(self,
-                 model):
-        super(DeepFishSegmentator, self).__init__()
-        self.model = model
-        self.lr = 1e-3
-        self.criterion = DiceBCELoss()
+class DeepFishLocalization(pl.LightningModule):
+    def __init__(self, model_head="PAN", backbone="efficientnet-b5", loss="dice_bce", activation=None):
+        super(DeepFishLocalization, self).__init__()
+
+        if model_head == "PAN":
+            self.model = smp.PAN(
+                encoder_name=backbone,
+                encoder_weights="imagenet",
+                in_channels=3,
+                classes=1,
+                activation=activation
+                )
+        elif model_head == "UNet":
+            self.model = smp.Unet(
+                encoder_name=backbone,
+                encoder_weights="imagenet",
+                in_channels=3,
+                classes=1,
+                activation=activation
+                )
+        elif model_head == "UnetPlusPlus":
+            self.model = smp.Unet(
+                encoder_name=backbone,
+                encoder_weights="imagenet",
+                in_channels=3,
+                classes=1,
+                activation=activation
+                )
+        else:
+            raise RuntimeError("Unknown model head")
+            
+        self.lr = 0.001
+
+        if loss == "focal":
+            self.criterion = FocalLoss()
+        elif loss == "tversky":
+            self.criterion = FocalTverskyLoss()
+        elif loss == "dice_bce":
+            self.criterion = DiceBCELoss()
+
+        self.save_hyperparameters()
 
     def forward(self, z):
         return self.model(z)
@@ -109,8 +147,10 @@ class DeepFishSegmentator(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         img, true_masks = batch
         logs = self.model(img)
+        logs = torch.squeeze(logs.permute(0, 2, 3, 1))
+        logs = torch.squeeze(logs)
 
-        loss = self.criterion(logs, torch.unsqueeze(true_masks, 1))
+        loss = self.criterion(logs, true_masks)
 
         self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
@@ -119,8 +159,11 @@ class DeepFishSegmentator(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         img, true_masks = batch
         logs = self.model(img)
+        logs = torch.squeeze(logs.permute(0, 2, 3, 1))
+        logs = torch.squeeze(logs)
 
-        loss = self.criterion(logs, torch.unsqueeze(true_masks, 1))
+        loss = self.criterion(logs, true_masks)
+
 
         self.log('val_loss', loss, on_step=True, on_epoch=True, prog_bar=False, logger=True)
 
@@ -128,7 +171,7 @@ class DeepFishSegmentator(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+        #scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
         return (
-            {'optimizer': optimizer, 'lr_scheduler': scheduler, 'monitor': 'train_loss'})
+            {'optimizer': optimizer}) #, 'lr_scheduler': scheduler, 'monitor': 'train_loss'})

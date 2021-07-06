@@ -15,7 +15,7 @@ def __get_default_detector():
     params.blobColor = 255
 
     params.filterByArea = True
-    params.minArea = 1
+    params.minArea = 35
     params.maxArea = 1000
 
     params.filterByCircularity = False
@@ -25,7 +25,10 @@ def __get_default_detector():
     return cv2.SimpleBlobDetector_create(params)
 
 
-def convert_location_masks(data_csv, src_dir, dst_dir, new_radius=5):
+def count_objects(mask, is_black_background=True, detector=__get_default_detector()):
+    return len(detector.detect(np.bitwise_not(mask) if is_black_background else mask))
+
+def convert_location_masks(data_csv, src_dir, dst_dir, new_radius=5, is_black_background=True):
     mask_names = [name + ".png" for name in pd.read_csv(data_csv)["ID"].tolist()]
 
     if not os.path.exists(dst_dir):
@@ -37,7 +40,7 @@ def convert_location_masks(data_csv, src_dir, dst_dir, new_radius=5):
     detector = __get_default_detector()
     for name in tqdm.tqdm(mask_names):
         mask = cv2.imread(os.path.join(src_dir, name), cv2.IMREAD_GRAYSCALE)
-        points = [[int(i) for i in keypoint.pt] for keypoint in detector.detect(np.bitwise_not(mask))]
+        points = [[int(i) for i in keypoint.pt] for keypoint in detector.detect(np.bitwise_not(mask) if is_black_background else mask)]
 
         for point in points:
             mask = cv2.circle(mask, point, new_radius, color=255, thickness=-1)
@@ -49,15 +52,15 @@ if __name__ == "__main__":
     BASE_DIR = "/work/data/DeepFish/Localization/"
     convert_location_masks(BASE_DIR + "train.csv",
                            BASE_DIR + "masks",
-                           BASE_DIR + "5_masks",
-                           5)
+                           BASE_DIR + "12_masks",
+                           12)
     
     convert_location_masks(BASE_DIR + "test.csv",
                         BASE_DIR + "masks",
-                        BASE_DIR + "5_masks",
-                        5)
+                        BASE_DIR + "12_masks",
+                        12)
 
     convert_location_masks(BASE_DIR + "val.csv",
                     BASE_DIR + "masks",
-                    BASE_DIR + "5_masks",
-                    5)
+                    BASE_DIR + "12_masks",
+                    12)
